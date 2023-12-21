@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Warehouse Inventory</title>
+    <!-- Include your styles.css here -->
+</head>
+<body>
+<div id="app">
+    <h1>Warehouse Inventory Dashboard</h1>
+    <input type="file" id="excelFile" accept=".xlsx, .xls" />
+    <button class="import-export-btn" data-action="import">Import</button>
+
+    <!-- Search Input -->
+    <input type="text" id="search-input" placeholder="Search...">
+
+    <!-- Container for the Table -->
+    <div id="data-container"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
