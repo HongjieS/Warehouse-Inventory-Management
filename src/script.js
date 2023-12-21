@@ -4,6 +4,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Attach event listener to the search input
     document.getElementById('search-input').addEventListener('input', searchTable);
+     var button = document.getElementById('yourButtonId');
+        if (button) {
+            button.addEventListener('click', someFunction);
+        }
 });
 
 function handleImport() {
@@ -99,3 +103,14 @@ function searchTable(event) {
         }
     }
 }
+
+function toggleSidebar() {
+    var sidebar = document.getElementById("sidebar");
+    if (sidebar.style.width === '250px') {
+        sidebar.style.width = '0';
+    } else {
+        sidebar.style.width = '250px';
+    }
+}
+
+

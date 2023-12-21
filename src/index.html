@@ -3,21 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <title>Warehouse Inventory</title>
-    <!-- Include your styles.css here -->
+    <link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div id="app">
-    <h1>Warehouse Inventory Dashboard</h1>
-    <input type="file" id="excelFile" accept=".xlsx, .xls" />
-    <button class="import-export-btn" data-action="import">Import</button>
 
-    <!-- Search Input -->
-    <input type="text" id="search-input" placeholder="Search...">
-
-    <!-- Container for the Table -->
-    <div id="data-container"></div>
+<div class="w3-sidebar w3-bar-block w3-collapse" id="sidebar" style="width:200px;">
+    <button onclick="toggleSidebar()" class="w3-bar-item w3-button w3-large">Close &times;</button>
+    <a href="#brand1" class="w3-bar-item w3-button">Brand 1</a>
+    <a href="#brand2" class="w3-bar-item w3-button">Brand 2</a>
+    <!-- Add more brands as needed -->
 </div>
 
+<div class="w3-main" style="margin-left:200px">
+    <button class="w3-button w3-xlarge" onclick="toggleSidebar()">☰</button>
+    <div class="main-content">
+        <h1>Warehouse Inventory Dashboard</h1>
+        <input type="file" id="excelFile" accept=".xlsx, .xls" />
+        <button class="button" onclick="handleImport()">Import</button>
+        <input type="text" id="search-input" placeholder="Search...">
+        <div id="data-container"></div>
+    </div>
+</div>
+
+<script>
+function toggleSidebar() {
+    var x = document.getElementById("sidebar");
+    if (x.className.indexOf("w3-show") === -1) {
+        x.className += " w3-show";
+    } else {
+        x.className = x.className.replace(" w3-show", "");
+    }
+}
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
 <script src="script.js"></script>
 </body>
