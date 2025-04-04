@@ -1,3 +1,67 @@
+:root {
+  font-family: 'Roboto', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+#root {
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0;
+}
+
+.MuiDrawer-paper {
+  background-color: #f5f5f5 !important;
+}
+
+.MuiAppBar-root {
+  background-color: #1976d2 !important;
+}
+
+.MuiButton-contained {
+  text-transform: none !important;
+}
+
+.MuiTableCell-root {
+  padding: 12px 16px !important;
+}
+
+.MuiTableHead-root {
+  background-color: #f5f5f5;
+}
+
+.MuiTableRow-root:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.MuiPaper-root {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+.MuiTextField-root {
+  margin: 0 !important;
+}
+
+.MuiSelect-select {
+  padding: 8px 14px !important;
+}
+
+.MuiCheckbox-root {
+  padding: 8px !important;
+}
+
+@media (max-width: 600px) {
+  .MuiTableCell-root {
+    padding: 8px !important;
+  }
+}
+
 .App {
   display: flex;
   flex-direction: column;
