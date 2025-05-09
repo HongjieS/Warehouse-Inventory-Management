@@ -1,0 +1,167 @@
+/* src/styles.css */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f8fafc;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Table styles */
+.MuiTable-root {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.MuiTableRow-root {
+  transition: background-color 0.2s ease;
+}
+
+.MuiTableCell-root {
+  transition: background-color 0.2s ease;
+}
+
+/* Button hover effects */
+.MuiButton-root {
+  transition: all 0.2s ease-in-out !important;
+}
+
+.MuiButton-contained:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Card hover effects */
+.MuiCard-root {
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out !important;
+}
+
+.MuiCard-root:hover {
+  transform: translateY(-2px);
+}
+
+/* Input field focus states */
+.MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+  border-width: 2px !important;
+}
+
+/* Loading spinner animation */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.MuiCircularProgress-root {
+  animation: spin 1s linear infinite;
+}
+
+/* Basic layout for top-bar, sidebar, main-content */
+.top-bar {
+  display: flex;
+  align-items: center;
+  background-color: #042647;
+  color: white;
+  height: 60px;
+  padding: 0 1rem;
+}
+
+.sidebar {
+  width: 140px;
+  background-color: #042647;
+  color: white;
+  position: fixed;
+  top: 60px; /* below top-bar */
+  bottom: 0;
+  overflow-y: auto;
+}
+
+.main-content {
+  margin-left: 140px; /* space for sidebar */
+  margin-top: 60px; /* space for top-bar */
+  padding: 1rem;
+}
+
+/* Basic table styling */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+th,
+td {
+  border: 1px solid #ddd;
+  padding: 8px;
+}
+th {
+  background-color: #007bff;
+  color: #fff;
+}
+tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+/* Buttons */
+button {
+  margin: 0.25rem;
+  padding: 6px 10px;
+  border: none;
+  background-color: #007bff;
+  color: #fff;
+  cursor: pointer;
+}
+button:hover {
+  background-color: #0056b3;
+}
