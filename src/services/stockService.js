@@ -95,4 +95,34 @@ export const updateStockItem = (type, itemToUpdate) => {
   
   localStorage.setItem(key, JSON.stringify(updatedStock));
   return updatedStock;
+};
+
+export const exportStock = (type) => {
+  const stock = getStock(type);
+  const exportData = {
+    type,
+    timestamp: new Date().toISOString(),
+    items: stock
+  };
+  return JSON.stringify(exportData, null, 2);
+};
+
+export const importStock = (jsonData) => {
+  try {
+    const data = JSON.parse(jsonData);
+    if (!data.type || !data.items || !Array.isArray(data.items)) {
+      throw new Error('Invalid stock data format');
+    }
+    
+    // Validate each item has required fields
+    data.items.forEach(item => {
+      if (!item.itemCode || !item.color || !item.size || item.quantity === undefined) {
+        throw new Error('Invalid item data format');
+      }
+    });
+    
+    return data;
+  } catch (error) {
+    throw new Error(`Failed to parse stock data: ${error.message}`);
+  }
 }; 

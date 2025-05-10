@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { parsePDFWorldFamous } from '../parsers/worldFamousParser';
 import { parsePDFEternal } from '../parsers/eternalParser';
 import { parsePDFSolidInk } from '../parsers/solidInkParser';
-import { saveStock, getStock, clearStock } from '../services/stockService';
+import { saveStock, getStock, clearStock, exportStock, importStock } from '../services/stockService';
+import { translate, getCurrentLanguage, setLanguage, LANGUAGES } from '../services/languageService';
 import {
   Box,
   Container,
@@ -49,11 +50,12 @@ import {
   Edit as EditIcon,
   History as HistoryIcon,
   Add as AddIcon,
+  FileDownload,
 } from '@mui/icons-material';
 import EditItemDialog from './EditItemDialog';
 import AddItemDialog from './AddItemDialog';
 import HistoryView from './HistoryView';
-import { addToHistory } from '../services/historyService';
+import { addHistoryEntry, ACTION_TYPES } from '../services/historyService';
 
 const standardizeSizeFormat = (size, itemCode = '') => {
   if (!size && !itemCode) return '';
@@ -125,6 +127,7 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
+  const [currentLanguage, setCurrentLanguage] = useState(getCurrentLanguage());
 
   const loadCurrentStock = useCallback(() => {
     const currentStock = getStock(type);
@@ -137,6 +140,25 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
     loadCurrentStock();
   }, [loadCurrentStock]);
 
+  // Helper to save uploaded file in localStorage and return a unique key
+  const saveUploadedFile = (file) => {
+    const reader = new FileReader();
+    return new Promise((resolve, reject) => {
+      reader.onload = () => {
+        const base64 = reader.result;
+        const fileKey = `${type}_invoice_${Date.now()}_${file.name}`;
+        try {
+          localStorage.setItem(fileKey, base64);
+          resolve(fileKey);
+        } catch (e) {
+          reject(e);
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleFileUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -145,30 +167,97 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
     setError(null);
 
     try {
-      // Read the file as an ArrayBuffer
-      const arrayBuffer = await file.arrayBuffer();
-      
-      let parsedData;
-      switch (type) {
-        case 'worldFamous':
-          parsedData = await parsePDFWorldFamous(arrayBuffer);
-          break;
-        case 'eternal':
-          parsedData = await parsePDFEternal(arrayBuffer);
-          break;
-        case 'solidInk':
-          parsedData = await parsePDFSolidInk(arrayBuffer);
-          break;
-        default:
-          throw new Error('Invalid type');
+      let invoiceFileKey = null;
+      // Save the uploaded file and get a reference key
+      invoiceFileKey = await saveUploadedFile(file);
+
+      // Check if it's a JSON file (stock data)
+      if (file.name.endsWith('.json')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const importedData = importStock(e.target.result);
+            if (importedData.type !== type) {
+              throw new Error(`Invalid stock type. Expected ${type} but got ${importedData.type}`);
+            }
+            setInvoiceData(importedData.items);
+            setCurrentView('import');
+            // Record import in history with file reference
+            addHistoryEntry(type, {
+              action: ACTION_TYPES.IMPORT,
+              items: [...importedData.items],
+              user: 'Current User',
+              notes: `Imported ${importedData.items.length} items from JSON`,
+              file: { name: file.name, dataUrl: invoiceFileKey }
+            });
+          } catch (error) {
+            setError(error.message);
+          }
+          setLoading(false);
+        };
+        reader.readAsText(file);
+        return;
       }
-      setInvoiceData(parsedData);
-      addToHistory(type, 'IMPORT', parsedData, `Imported ${invoiceName || file.name}`);
+
+      // Handle PDF files as before
+      if (!file.name.endsWith('.pdf')) {
+        throw new Error('Please upload a PDF file');
+      }
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          let parsedData;
+          if (type === 'worldFamous') {
+            parsedData = await parsePDFWorldFamous(e.target.result);
+          } else if (type === 'eternal') {
+            parsedData = await parsePDFEternal(e.target.result);
+          } else if (type === 'solidInk') {
+            parsedData = await parsePDFSolidInk(e.target.result);
+          }
+          setInvoiceData(parsedData);
+          setCurrentView('import');
+          // Record import in history with file reference
+          addHistoryEntry(type, {
+            action: ACTION_TYPES.IMPORT,
+            items: [...parsedData],
+            user: 'Current User',
+            notes: `Imported ${parsedData.length} items from PDF`,
+            file: { name: file.name, dataUrl: invoiceFileKey }
+          });
+        } catch (error) {
+          setError(error.message);
+        }
+        setLoading(false);
+      };
+      reader.readAsArrayBuffer(file);
     } catch (error) {
-      console.error('Error parsing PDF:', error);
       setError(error.message);
-    } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExportStock = () => {
+    try {
+      const exportData = exportStock(type);
+      const blob = new Blob([exportData], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${type}-stock-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      // Record export in history
+      addHistoryEntry(type, {
+        action: ACTION_TYPES.EXPORT,
+        items: [...stockData],
+        user: 'Current User',
+        notes: `Exported stock data (${stockData.length} items)`
+      });
+    } catch (error) {
+      setError(error.message);
     }
   };
 
@@ -206,8 +295,10 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
         }
       });
 
-      addToHistory(type, 'EDIT', editedItem, {
-        user: 'Current User', // Replace with actual user when authentication is implemented
+      addHistoryEntry(type, {
+        action: ACTION_TYPES.EDIT,
+        items: [editedItem],
+        user: 'Current User',
         notes: 'Item edited',
         changes,
         previousState: originalItem,
@@ -232,8 +323,10 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
     setStockData(updatedStock);
     
     // Enhanced history tracking for imports
-    addToHistory(type, 'IMPORT', invoiceData, {
-      user: 'Current User', // Replace with actual user when authentication is implemented
+    addHistoryEntry(type, {
+      action: ACTION_TYPES.IMPORT,
+      items: [...invoiceData],
+      user: 'Current User',
       notes: `Imported ${invoiceData.length} items`,
       batchId: new Date().getTime().toString(),
       quantity: invoiceData.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0)
@@ -246,8 +339,10 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
 
   const handleClearStock = () => {
     // Enhanced history tracking for clearing stock
-    addToHistory(type, 'CLEAR', stockData, {
-      user: 'Current User', // Replace with actual user when authentication is implemented
+    addHistoryEntry(type, {
+      action: ACTION_TYPES.CLEAR,
+      items: [...stockData],
+      user: 'Current User',
       notes: 'All stock cleared',
       quantity: stockData.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0)
     });
@@ -302,8 +397,10 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
     setStockData(updatedStock);
     
     // Add to history
-    addToHistory(type, 'ADD', newItem, {
-      user: 'Current User', // Replace with actual user when authentication is implemented
+    addHistoryEntry(type, {
+      action: ACTION_TYPES.ADD,
+      items: [newItem],
+      user: 'Current User',
       notes: 'New item added manually',
       quantity: newItem.quantity
     });
@@ -330,8 +427,10 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
     setStockData(updatedStock);
     
     // Add to history
-    addToHistory(type, 'DELETE', itemToDelete, {
-      user: 'Current User', // Replace with actual user when authentication is implemented
+    addHistoryEntry(type, {
+      action: ACTION_TYPES.DELETE,
+      items: [itemToDelete],
+      user: 'Current User',
       notes: 'Item deleted',
       quantity: itemToDelete.quantity
     });
@@ -339,6 +438,12 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
     setDeleteConfirmOpen(false);
     setItemToDelete(null);
     loadCurrentStock();
+  };
+
+  const handleLanguageSwitch = () => {
+    const newLanguage = currentLanguage === LANGUAGES.ENGLISH ? LANGUAGES.MANDARIN : LANGUAGES.ENGLISH;
+    setLanguage(newLanguage);
+    setCurrentLanguage(newLanguage);
   };
 
   return (
@@ -351,7 +456,7 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
                 {title}
               </Typography>
               <Typography variant="subtitle1" color="text.secondary">
-                Manage your {type === 'worldFamous' ? 'World Famous' : type === 'eternal' ? 'Eternal' : 'Solid Ink'} inventory
+                {translate('Manage your inventory')}
               </Typography>
             </Box>
             
@@ -363,7 +468,16 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
                 onClick={() => setAddDialogOpen(true)}
                 aria-label="Add Item"
               >
-                Add Item
+                {translate('Add Item')}
+              </Button>
+              <Button
+                variant="outlined"
+                color="primary"
+                startIcon={<FileDownload />}
+                onClick={handleExportStock}
+                aria-label="Export Stock"
+              >
+                {translate('Export Stock')}
               </Button>
               <Button
                 variant="outlined"
@@ -372,7 +486,7 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
                 onClick={() => setClearConfirmOpen(true)}
                 aria-label="Clear Stock"
               >
-                Clear Stock
+                {translate('Clear Stock')}
               </Button>
               <Button
                 variant="contained"
@@ -388,11 +502,11 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
                 }}
                 aria-label="Upload Invoice"
               >
-                Upload Invoice
+                {translate('Upload Invoice')}
                 <input
                   type="file"
                   hidden
-                  accept=".pdf"
+                  accept=".pdf,.json"
                   onChange={handleFileUpload}
                   aria-label="Invoice file input"
                 />
@@ -428,21 +542,21 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
               >
                 <Tab 
                   value="stock" 
-                  label="Current Stock" 
+                  label={translate('Current Stock')} 
                   icon={<InventoryIcon />} 
                   iconPosition="start"
                 />
                 {invoiceData.length > 0 && (
                   <Tab 
                     value="import" 
-                    label="New Import" 
+                    label={translate('New Import')} 
                     icon={<CloudUploadIcon />} 
                     iconPosition="start"
                   />
                 )}
                 <Tab 
                   value="history" 
-                  label="History" 
+                  label={translate('History')} 
                   icon={<HistoryIcon />} 
                   iconPosition="start"
                 />
@@ -459,7 +573,7 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
                           <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                             <DescriptionIcon color="primary" sx={{ mr: 1 }} />
                             <Typography variant="subtitle1" color="text.secondary">
-                              Total Items
+                              {translate('Total Items')}
                             </Typography>
                           </Box>
                           <Typography variant="h4" color="primary">
@@ -474,7 +588,7 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
                           <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                             <NumbersIcon color="primary" sx={{ mr: 1 }} />
                             <Typography variant="subtitle1" color="text.secondary">
-                              Total Quantity
+                              {translate('Total Quantity')}
                             </Typography>
                           </Box>
                           <Typography variant="h4" color="primary">
@@ -490,21 +604,21 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
 
                   <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 3 }}>
                     <FormControl size="small" sx={{ minWidth: 150 }}>
-                      <InputLabel>Search in</InputLabel>
+                      <InputLabel>{translate('Search in')}</InputLabel>
                       <Select
                         value={searchField}
                         onChange={handleSearchFieldChange}
-                        label="Search in"
+                        label={translate('Search in')}
                       >
-                        <MenuItem value="all">All Fields</MenuItem>
-                        <MenuItem value="color">Color</MenuItem>
-                        <MenuItem value="itemCode">Item Code</MenuItem>
-                        <MenuItem value="size">Size</MenuItem>
+                        <MenuItem value="all">{translate('All Fields')}</MenuItem>
+                        <MenuItem value="color">{translate('Color')}</MenuItem>
+                        <MenuItem value="itemCode">{translate('Item Code')}</MenuItem>
+                        <MenuItem value="size">{translate('Size')}</MenuItem>
                       </Select>
                     </FormControl>
                     <TextField
                       size="small"
-                      placeholder={`Search ${searchField === 'all' ? 'all fields' : searchField}...`}
+                      placeholder={`Search ${searchField === 'all' ? translate('all fields') : searchField}...`}
                       value={searchTerm}
                       onChange={handleSearchChange}
                       InputProps={{
@@ -529,7 +643,7 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
                         color="success"
                         onClick={handleConfirmImport}
                       >
-                        Confirm Import
+                        {translate('Confirm Import')}
                       </Button>
                     )}
                   </Box>
@@ -538,11 +652,11 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
                     <Table>
                       <TableHead>
                         <TableRow>
-                          <TableCell>Item Code</TableCell>
-                          <TableCell>Color</TableCell>
-                          <TableCell align="right">Quantity</TableCell>
-                          <TableCell>Size</TableCell>
-                          <TableCell align="center">Actions</TableCell>
+                          <TableCell>{translate('Item Code')}</TableCell>
+                          <TableCell>{translate('Color')}</TableCell>
+                          <TableCell align="right">{translate('Quantity')}</TableCell>
+                          <TableCell>{translate('Size')}</TableCell>
+                          <TableCell align="center">{translate('Actions')}</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -560,7 +674,7 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
                                     size="small"
                                     onClick={() => handleEditClick(item)}
                                     color="primary"
-                                    aria-label="Edit item"
+                                    aria-label={translate('Edit item')}
                                   >
                                     <EditIcon />
                                   </IconButton>
@@ -568,7 +682,7 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
                                     size="small"
                                     onClick={() => handleDeleteClick(item)}
                                     color="error"
-                                    aria-label="Delete item"
+                                    aria-label={translate('Delete item')}
                                   >
                                     <DeleteIcon />
                                   </IconButton>
@@ -601,10 +715,10 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
             aria-labelledby="clear-confirm-title"
             aria-describedby="clear-confirm-description"
           >
-            <DialogTitle id="clear-confirm-title">Clear Stock Confirmation</DialogTitle>
+            <DialogTitle id="clear-confirm-title">{translate('Clear Stock Confirmation')}</DialogTitle>
             <DialogContent id="clear-confirm-description">
               <Typography>
-                Are you sure you want to clear all {type === 'worldFamous' ? 'World Famous' : type === 'eternal' ? 'Eternal' : 'Solid Ink'} stock data? This action cannot be undone.
+                {translate('Are you sure you want to clear all')} {type === 'worldFamous' ? 'World Famous' : type === 'eternal' ? 'Eternal' : 'Solid Ink'} {translate('stock data? This action cannot be undone.')}
               </Typography>
             </DialogContent>
             <DialogActions>
@@ -612,7 +726,7 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
                 onClick={() => setClearConfirmOpen(false)}
                 aria-label="Cancel Clear"
               >
-                Cancel
+                {translate('Cancel')}
               </Button>
               <Button 
                 onClick={handleClearStock} 
@@ -620,7 +734,7 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
                 variant="contained"
                 aria-label="Confirm Clear Stock"
               >
-                Clear Stock
+                {translate('Clear Stock')}
               </Button>
             </DialogActions>
           </Dialog>
@@ -650,18 +764,18 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
             aria-labelledby="delete-confirm-title"
             aria-describedby="delete-confirm-description"
           >
-            <DialogTitle id="delete-confirm-title">Delete Item</DialogTitle>
+            <DialogTitle id="delete-confirm-title">{translate('Delete Item')}</DialogTitle>
             <DialogContent id="delete-confirm-description">
               <Typography>
-                Are you sure you want to delete this item?
+                {translate('Are you sure you want to delete this item?')}
               </Typography>
               {itemToDelete && (
                 <Box sx={{ mt: 2 }}>
-                  <Typography variant="subtitle2">Item Details:</Typography>
-                  <Typography>Code: {itemToDelete.itemCode}</Typography>
-                  <Typography>Color: {itemToDelete.color}</Typography>
-                  <Typography>Size: {itemToDelete.size}</Typography>
-                  <Typography>Quantity: {itemToDelete.quantity}</Typography>
+                  <Typography variant="subtitle2">{translate('Item Details:')}</Typography>
+                  <Typography>{translate('Code:')} {itemToDelete.itemCode}</Typography>
+                  <Typography>{translate('Color:')} {itemToDelete.color}</Typography>
+                  <Typography>{translate('Size:')} {itemToDelete.size}</Typography>
+                  <Typography>{translate('Quantity:')} {itemToDelete.quantity}</Typography>
                 </Box>
               )}
             </DialogContent>
@@ -671,17 +785,17 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
                   setDeleteConfirmOpen(false);
                   setItemToDelete(null);
                 }}
-                aria-label="Cancel Delete"
+                aria-label={translate('Cancel Delete')}
               >
-                Cancel
+                {translate('Cancel')}
               </Button>
               <Button 
                 onClick={handleConfirmDelete} 
                 color="error" 
                 variant="contained"
-                aria-label="Confirm Delete"
+                aria-label={translate('Confirm Delete')}
               >
-                Delete
+                {translate('Delete')}
               </Button>
             </DialogActions>
           </Dialog>

@@ -40,7 +40,7 @@ import {
   Refresh,
   DateRange,
 } from '@mui/icons-material';
-import { getHistory, clearHistory, exportHistory, getHistoryStats, ACTION_TYPES } from '../services/historyService';
+import { getHistoryEntries, clearHistoryEntries, getHistoryStats, ACTION_TYPES } from '../services/historyService';
 import { format, parseISO, isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
 
 const HistoryView = ({ type }) => {
@@ -59,10 +59,10 @@ const HistoryView = ({ type }) => {
   const [showFilters, setShowFilters] = useState(false);
 
   const loadHistory = useCallback(() => {
-    const historyData = getHistory(type, filters);
+    const historyData = getHistoryEntries(type);
     setHistory(historyData);
     setStats(getHistoryStats(type));
-  }, [type, filters]);
+  }, [type]);
 
   useEffect(() => {
     loadHistory();
@@ -73,7 +73,7 @@ const HistoryView = ({ type }) => {
   };
 
   const confirmClearHistory = () => {
-    clearHistory(type);
+    clearHistoryEntries(type);
     loadHistory();
     setClearConfirmOpen(false);
   };
@@ -125,12 +125,31 @@ const HistoryView = ({ type }) => {
   };
 
   const handleExport = (format) => {
-    const data = exportHistory(type, format);
-    const blob = new Blob([data], { type: format === 'json' ? 'application/json' : 'text/csv' });
+    const history = getHistoryEntries(type);
+    let data, mimeType, fileExt;
+    if (format === 'json') {
+      data = JSON.stringify(history, null, 2);
+      mimeType = 'application/json';
+      fileExt = 'json';
+    } else if (format === 'csv') {
+      const headers = ['Timestamp', 'Action', 'User', 'Notes', 'Items', 'Changes'];
+      const rows = history.map(entry => [
+        new Date(entry.timestamp).toLocaleString(),
+        entry.action,
+        entry.user,
+        entry.notes,
+        JSON.stringify(entry.items),
+        entry.changes ? JSON.stringify(entry.changes) : ''
+      ]);
+      data = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+      mimeType = 'text/csv';
+      fileExt = 'csv';
+    }
+    const blob = new Blob([data], { type: mimeType });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${type}-history.${format}`;
+    a.download = `${type}-history.${fileExt}`;
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);
@@ -349,6 +368,31 @@ const HistoryView = ({ type }) => {
                               <Typography variant="body2">
                                 {JSON.stringify(entry.changes, null, 2)}
                               </Typography>
+                            </>
+                          )}
+                          {entry.invoiceFileKey && entry.fileName && (
+                            <>
+                              <Typography variant="subtitle2" sx={{ mt: 1 }} gutterBottom>
+                                Invoice File:
+                              </Typography>
+                              <Button
+                                variant="outlined"
+                                size="small"
+                                sx={{ mt: 1, mb: 1 }}
+                                onClick={() => {
+                                  const dataUrl = localStorage.getItem(entry.invoiceFileKey);
+                                  if (dataUrl) {
+                                    const a = document.createElement('a');
+                                    a.href = dataUrl;
+                                    a.download = entry.fileName;
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                  }
+                                }}
+                              >
+                                Download {entry.fileName}
+                              </Button>
                             </>
                           )}
                         </Box>

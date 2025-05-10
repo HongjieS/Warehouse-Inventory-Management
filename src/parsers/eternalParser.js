@@ -94,15 +94,31 @@ export async function parsePDFEternal(arrayBuffer) {
           .replace(/\s*Set.*$/i, "") // Remove "Set" and anything after it
           .trim();
 
+        // Standardize size to 'X oz' format
+        function standardizeSize(size) {
+          if (!size) return '';
+          const match = size.match(/([\d.\/]+)\s*(ounce|oz)/i);
+          if (match) {
+            let num = match[1];
+            // Convert '1/2' to '0.5'
+            if (num.includes('/')) {
+              const [n, d] = num.split('/').map(Number);
+              num = (n / d).toString();
+            }
+            return `${num} oz`;
+          }
+          return size;
+        }
+
         // Skip discount lines and empty colors
         if (!itemCode.includes("Discount") && color && !color.match(/^(ounce|Bottle|Bottles)$/i)) {
           results.push({
             itemCode,
             color,
             quantity,
-            size
+            size: standardizeSize(size)
           });
-          console.log('Successfully parsed item:', { itemCode, color, quantity, size }); // Debug logging
+          console.log('Successfully parsed item:', { itemCode, color, quantity, size: standardizeSize(size) }); // Debug logging
         }
       } else {
         console.log('Line did not match pattern:', line); // Debug logging
