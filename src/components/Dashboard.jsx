@@ -2,29 +2,19 @@ import React, { useState } from 'react';
 import {
   Box,
   Container,
-  Paper,
   Tabs,
   Tab,
   Typography,
-  AppBar,
-  Toolbar,
-  IconButton,
-  Drawer,
-  List,
-  ListItem,
-  ListItemIcon,
-  ListItemText,
-  Divider,
-  Button,
 } from '@mui/material';
-import {
-  Menu as MenuIcon,
-  Dashboard as DashboardIcon,
-  History as HistoryIcon,
-  Assessment as AssessmentIcon,
-} from '@mui/icons-material';
 import InvoiceViewer from './InvoiceViewer';
 import { translate, getCurrentLanguage, setLanguage, LANGUAGES } from '../services/languageService';
+import InvoicesTab from './InvoicesTab';
+
+const BRAND_TYPES = [
+  { label: 'World Famous', value: 'worldFamous' },
+  { label: 'Eternal', value: 'eternal' },
+  { label: 'Solid Ink', value: 'solidInk' },
+];
 
 const Dashboard = () => {
   const [selectedTab, setSelectedTab] = useState(0);
@@ -34,72 +24,66 @@ const Dashboard = () => {
     setSelectedTab(newValue);
   };
 
-  const handleLanguageSwitch = () => {
-    const newLanguage = currentLanguage === LANGUAGES.ENGLISH ? LANGUAGES.MANDARIN : LANGUAGES.ENGLISH;
-    setLanguage(newLanguage);
-    setCurrentLanguage(newLanguage);
-  };
-
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
-      {/* Top AppBar */}
-      <AppBar position="fixed" sx={{ backgroundColor: '#042647', borderRadius: 0, boxShadow: 1, top: 0, left: 0, right: 0 }}>
-        <Toolbar sx={{ display: 'flex', justifyContent: 'space-between', minHeight: '56px !important', px: 3 }}>
-          <Typography variant="h6" noWrap component="div">
-            Warehouse Inventory
-          </Typography>
-          <Button
-            color="inherit"
-            variant="outlined"
-            onClick={handleLanguageSwitch}
-            sx={{ ml: 2, borderColor: 'white', color: 'white' }}
-          >
-            {currentLanguage === LANGUAGES.ENGLISH ? translate('Switch to Mandarin') : translate('Switch to English')}
-          </Button>
-        </Toolbar>
-      </AppBar>
-      <Toolbar /> {/* Spacer */}
-      <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-        <Paper sx={{ mb: 3 }}>
+    <Container maxWidth="xl" sx={{ mt: 6, mb: 6, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <Box sx={{ mb: 6, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        {/* Removed Dashboard title */}
+      </Box>
+      <Box sx={{ width: '100%', maxWidth: 1400, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <Box sx={{
+          width: '100%',
+          maxWidth: 1200,
+          mb: 4,
+          borderRadius: 3,
+          boxShadow: 3,
+          bgcolor: 'background.paper',
+          border: '1.5px solid',
+          borderColor: 'divider',
+          p: 1,
+        }}>
           <Tabs
             value={selectedTab}
             onChange={handleTabChange}
             variant="fullWidth"
             sx={{
               '& .MuiTab-root': {
-                fontSize: '1rem',
+                fontSize: '1.35rem',
                 textTransform: 'none',
                 fontWeight: 600,
                 py: 2,
+                transition: 'color 0.2s',
               },
+              '& .Mui-selected': {
+                color: 'primary.main',
+                fontWeight: 700,
+                borderBottom: '3px solid',
+                borderColor: 'primary.main',
+                backgroundColor: 'rgba(25, 118, 210, 0.08)',
+                boxShadow: 2,
+                zIndex: 1,
+              },
+              backgroundColor: 'background.paper',
+              borderRadius: 3,
             }}
           >
-            <Tab label="World Famous" />
-            <Tab label="Eternal" />
-            <Tab label="Solid Ink" />
+            {BRAND_TYPES.map((brand, idx) => (
+              <Tab key={brand.value} label={brand.label} />
+            ))}
           </Tabs>
-        </Paper>
-        {selectedTab === 0 && (
-          <InvoiceViewer 
-            type="worldFamous"
-            title="World Famous Inventory"
-          />
-        )}
-        {selectedTab === 1 && (
-          <InvoiceViewer 
-            type="eternal"
-            title="Eternal Inventory"
-          />
-        )}
-        {selectedTab === 2 && (
-          <InvoiceViewer 
-            type="solidInk"
-            title="Solid Ink Inventory"
-            invoiceName="Invoice 5099.pdf"
-          />
-        )}
-      </Container>
-    </Box>
+        </Box>
+        <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto' }}>
+          {selectedTab === 0 && (
+            <InvoiceViewer type="worldFamous" title="World Famous Inventory" large />
+          )}
+          {selectedTab === 1 && (
+            <InvoiceViewer type="eternal" title="Eternal Inventory" large />
+          )}
+          {selectedTab === 2 && (
+            <InvoiceViewer type="solidInk" title="Solid Ink Inventory" large />
+          )}
+        </Box>
+      </Box>
+    </Container>
   );
 };
 

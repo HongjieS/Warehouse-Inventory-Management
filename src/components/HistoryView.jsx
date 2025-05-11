@@ -42,6 +42,7 @@ import {
 } from '@mui/icons-material';
 import { getHistoryEntries, clearHistoryEntries, getHistoryStats, ACTION_TYPES } from '../services/historyService';
 import { format, parseISO, isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
+import { getStockVersions, restoreStockVersion } from '../services/stockService';
 
 const HistoryView = ({ type }) => {
   const [history, setHistory] = useState([]);
@@ -57,10 +58,25 @@ const HistoryView = ({ type }) => {
   });
   const [stats, setStats] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [versionModalOpen, setVersionModalOpen] = useState(false);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [historyWithVersions, setHistoryWithVersions] = useState([]);
+  const [allVersions, setAllVersions] = useState([]);
+  const [selectedVersion, setSelectedVersion] = useState(null);
+  const [restoring, setRestoring] = useState(false);
+  const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false);
+  const [pendingRestoreVersionId, setPendingRestoreVersionId] = useState(null);
 
   const loadHistory = useCallback(() => {
     const historyData = getHistoryEntries(type);
-    setHistory(historyData);
+    const versions = getStockVersions(type);
+    setAllVersions(versions);
+    // Attach version snapshot by versionId
+    const merged = historyData.map(entry => {
+      const version = entry.versionId ? versions.find(v => v.id === entry.versionId) : undefined;
+      return { ...entry, version };
+    });
+    setHistoryWithVersions(merged);
     setStats(getHistoryStats(type));
   }, [type]);
 
@@ -168,6 +184,34 @@ const HistoryView = ({ type }) => {
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPage(0);
+  };
+
+  const handlePreviewVersion = (version) => {
+    setSelectedVersion(version);
+    setPreviewModalOpen(true);
+  };
+
+  const handleRestoreVersion = (versionId) => {
+    setPendingRestoreVersionId(versionId);
+    setConfirmRestoreOpen(true);
+  };
+
+  const confirmRestore = async () => {
+    setRestoring(true);
+    try {
+      restoreStockVersion(type, pendingRestoreVersionId);
+      loadHistory();
+      setPreviewModalOpen(false);
+      setConfirmRestoreOpen(false);
+      setPendingRestoreVersionId(null);
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const cancelRestore = () => {
+    setConfirmRestoreOpen(false);
+    setPendingRestoreVersionId(null);
   };
 
   return (
@@ -307,10 +351,12 @@ const HistoryView = ({ type }) => {
               <TableCell>Action</TableCell>
               <TableCell>User</TableCell>
               <TableCell>Details</TableCell>
+              <TableCell>Preview</TableCell>
+              <TableCell>Restore</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {history
+            {historyWithVersions
               .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
               .map((entry, index) => (
                 <React.Fragment key={index}>
@@ -339,9 +385,33 @@ const HistoryView = ({ type }) => {
                         ? `${entry.items.length} items affected`
                         : 'Single item modified'}
                     </TableCell>
+                    <TableCell>
+                      {entry.version && (
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() => handlePreviewVersion(entry.version)}
+                        >
+                          Preview
+                        </Button>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {entry.version && (
+                        <Button
+                          variant="outlined"
+                          color="primary"
+                          size="small"
+                          disabled={restoring}
+                          onClick={() => handleRestoreVersion(entry.version.id)}
+                        >
+                          Restore
+                        </Button>
+                      )}
+                    </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={5}>
+                    <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={7}>
                       <Collapse in={expandedRows[index]} timeout="auto" unmountOnExit>
                         <Box sx={{ margin: 1 }}>
                           <Typography variant="subtitle2" gutterBottom>
@@ -408,12 +478,43 @@ const HistoryView = ({ type }) => {
       <TablePagination
         rowsPerPageOptions={[10, 25, 50]}
         component="div"
-        count={history.length}
+        count={historyWithVersions.length}
         rowsPerPage={rowsPerPage}
         page={page}
         onPageChange={handleChangePage}
         onRowsPerPageChange={handleChangeRowsPerPage}
       />
+
+      <Dialog open={previewModalOpen} onClose={() => setPreviewModalOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Stock Preview</DialogTitle>
+        <DialogContent>
+          {selectedVersion && (
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Item Code</TableCell>
+                  <TableCell>Color</TableCell>
+                  <TableCell>Size</TableCell>
+                  <TableCell>Quantity</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {selectedVersion.items.map((item, idx) => (
+                  <TableRow key={idx}>
+                    <TableCell>{item.itemCode}</TableCell>
+                    <TableCell>{item.color}</TableCell>
+                    <TableCell>{item.size}</TableCell>
+                    <TableCell>{item.quantity}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPreviewModalOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={clearConfirmOpen}
@@ -430,6 +531,17 @@ const HistoryView = ({ type }) => {
           <Button onClick={confirmClearHistory} color="error" variant="contained">
             Clear History
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={confirmRestoreOpen} onClose={cancelRestore}>
+        <DialogTitle>Confirm Restore</DialogTitle>
+        <DialogContent>
+          <Typography>Are you sure you want to restore this version? This will overwrite the current stock for this brand.</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={cancelRestore}>Cancel</Button>
+          <Button onClick={confirmRestore} color="primary" variant="contained" disabled={restoring}>Restore</Button>
         </DialogActions>
       </Dialog>
     </Paper>

@@ -37,6 +37,15 @@ const translations = {
     'Delete': 'Delete',
     'Switch to Mandarin': 'Switch to Mandarin',
     'Switch to English': 'Switch to English',
+    'Create Invoice': 'Create Invoice',
+    'Create New Invoice': 'Create New Invoice',
+    'Brand': 'Brand',
+    'Quantity': 'Quantity',
+    'Please fill in all fields': 'Please fill in all fields',
+    'Please enter a valid quantity': 'Please enter a valid quantity',
+    'Not enough stock available': 'Not enough stock available',
+    'Please add at least one item to the invoice': 'Please add at least one item to the invoice',
+    'Items exported via invoice creation': 'Items exported via invoice creation',
   },
   zh: {
     // General
@@ -69,6 +78,15 @@ const translations = {
     'Delete': '删除',
     'Switch to Mandarin': '切换到中文',
     'Switch to English': '切换到英文',
+    'Create Invoice': '创建发票',
+    'Create New Invoice': '创建新发票',
+    'Brand': '品牌',
+    'Quantity': '数量',
+    'Please fill in all fields': '请填写所有字段',
+    'Please enter a valid quantity': '请输入有效数量',
+    'Not enough stock available': '库存不足',
+    'Please add at least one item to the invoice': '请在发票中添加至少一个商品',
+    'Items exported via invoice creation': '通过发票创建导出的商品',
   }
 };
 

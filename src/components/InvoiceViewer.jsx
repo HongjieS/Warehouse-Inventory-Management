@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { parsePDFWorldFamous } from '../parsers/worldFamousParser';
 import { parsePDFEternal } from '../parsers/eternalParser';
 import { parsePDFSolidInk } from '../parsers/solidInkParser';
-import { saveStock, getStock, clearStock, exportStock, importStock } from '../services/stockService';
+import { saveStock, getStock, clearStock, exportStock, importStock, setStock, saveStockVersion, getStockVersions, restoreStockVersion } from '../services/stockService';
 import { translate, getCurrentLanguage, setLanguage, LANGUAGES } from '../services/languageService';
 import {
   Box,
@@ -51,10 +51,12 @@ import {
   History as HistoryIcon,
   Add as AddIcon,
   FileDownload,
+  Receipt as ReceiptIcon,
 } from '@mui/icons-material';
 import EditItemDialog from './EditItemDialog';
 import AddItemDialog from './AddItemDialog';
 import HistoryView from './HistoryView';
+import InvoiceCreator from './InvoiceCreator';
 import { addHistoryEntry, ACTION_TYPES } from '../services/historyService';
 
 const standardizeSizeFormat = (size, itemCode = '') => {
@@ -108,7 +110,7 @@ const standardizeSizeFormat = (size, itemCode = '') => {
   return size;
 };
 
-const InvoiceViewer = ({ type, title, invoiceName }) => {
+const InvoiceViewer = ({ type, title, large }) => {
   const [currentView, setCurrentView] = useState('stock');
   const [invoiceData, setInvoiceData] = useState([]);
   const [stockData, setStockData] = useState([]);
@@ -128,6 +130,10 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
   const [currentLanguage, setCurrentLanguage] = useState(getCurrentLanguage());
+  const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
+  const [versionModalOpen, setVersionModalOpen] = useState(false);
+  const [versions, setVersions] = useState([]);
+  const [restoring, setRestoring] = useState(false);
 
   const loadCurrentStock = useCallback(() => {
     const currentStock = getStock(type);
@@ -210,10 +216,13 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
           let parsedData;
           if (type === 'worldFamous') {
             parsedData = await parsePDFWorldFamous(e.target.result);
+            saveStock('worldFamous', parsedData);
           } else if (type === 'eternal') {
             parsedData = await parsePDFEternal(e.target.result);
+            saveStock('eternal', parsedData);
           } else if (type === 'solidInk') {
             parsedData = await parsePDFSolidInk(e.target.result);
+            saveStock('solidInk', parsedData);
           }
           setInvoiceData(parsedData);
           setCurrentView('import');
@@ -268,6 +277,7 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
 
   const handleEditSave = (editedItem) => {
     if (currentView === 'stock') {
+      const versionId = saveStockVersion(type, 'edit', stockData);
       const updatedStock = stockData.map(item => 
         (item.itemCode === editedItem.itemCode && 
          item.color === editedItem.color && 
@@ -302,7 +312,8 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
         notes: 'Item edited',
         changes,
         previousState: originalItem,
-        newState: editedItem
+        newState: editedItem,
+        versionId
       });
     } else {
       const updatedImport = invoiceData.map(item => 
@@ -319,32 +330,32 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
   };
 
   const handleConfirmImport = () => {
-    const updatedStock = saveStock(type, invoiceData);
-    setStockData(updatedStock);
-    
-    // Enhanced history tracking for imports
+    const versionId = saveStockVersion(type, 'import', stockData);
+    setStock(type, invoiceData);
+    setStockData(invoiceData);
     addHistoryEntry(type, {
       action: ACTION_TYPES.IMPORT,
       items: [...invoiceData],
       user: 'Current User',
       notes: `Imported ${invoiceData.length} items`,
       batchId: new Date().getTime().toString(),
-      quantity: invoiceData.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0)
+      quantity: invoiceData.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0),
+      versionId
     });
-    
     setInvoiceData([]);
     setCurrentView('stock');
     loadCurrentStock();
   };
 
   const handleClearStock = () => {
-    // Enhanced history tracking for clearing stock
+    const versionId = saveStockVersion(type, 'clear', stockData);
     addHistoryEntry(type, {
       action: ACTION_TYPES.CLEAR,
       items: [...stockData],
       user: 'Current User',
       notes: 'All stock cleared',
-      quantity: stockData.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0)
+      quantity: stockData.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0),
+      versionId
     });
     
     clearStock(type);
@@ -392,6 +403,7 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
   }, [stockData, invoiceData, currentView, searchTerm, searchField]);
 
   const handleAddItem = (newItem) => {
+    const versionId = saveStockVersion(type, 'add', stockData);
     const updatedStock = [...stockData, newItem];
     saveStock(type, updatedStock);
     setStockData(updatedStock);
@@ -402,7 +414,8 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
       items: [newItem],
       user: 'Current User',
       notes: 'New item added manually',
-      quantity: newItem.quantity
+      quantity: newItem.quantity,
+      versionId
     });
     
     setAddDialogOpen(false);
@@ -415,6 +428,7 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
   };
 
   const handleConfirmDelete = () => {
+    const versionId = saveStockVersion(type, 'delete', stockData);
     if (!itemToDelete) return;
 
     const updatedStock = stockData.filter(item => 
@@ -432,7 +446,8 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
       items: [itemToDelete],
       user: 'Current User',
       notes: 'Item deleted',
-      quantity: itemToDelete.quantity
+      quantity: itemToDelete.quantity,
+      versionId
     });
     
     setDeleteConfirmOpen(false);
@@ -446,20 +461,44 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
     setCurrentLanguage(newLanguage);
   };
 
+  const openVersionModal = () => {
+    setVersions(getStockVersions(type));
+    setVersionModalOpen(true);
+  };
+
+  const handleRestoreVersion = async (versionId) => {
+    setRestoring(true);
+    try {
+      restoreStockVersion(type, versionId);
+      loadCurrentStock();
+      setVersionModalOpen(false);
+    } finally {
+      setRestoring(false);
+    }
+  };
+
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Fade in timeout={500}>
-        <Paper elevation={3} sx={{ p: 4, mb: 4 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-            <Box>
-              <Typography variant="h4" component="h1" gutterBottom>
-                {title}
-              </Typography>
-              <Typography variant="subtitle1" color="text.secondary">
-                {translate('Manage your inventory')}
-              </Typography>
-            </Box>
-            
+    <Box sx={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+      <Paper
+        elevation={3}
+        sx={{
+          width: '100%',
+          maxWidth: large ? 1300 : 1000,
+          p: large ? 6 : 4,
+          mb: large ? 6 : 4,
+          fontSize: large ? '1.25rem' : '1rem',
+        }}
+      >
+        <Box sx={{ mb: large ? 4 : 2 }}>
+          <Typography variant={large ? 'h3' : 'h4'} component="h1" gutterBottom>
+            {title}
+          </Typography>
+          <Typography variant="subtitle1" color="text.secondary" sx={{ fontSize: large ? '1.15rem' : '1rem' }}>
+            {translate('Manage your inventory')}
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+          <Box>
             <Stack direction="row" spacing={2}>
               <Button
                 variant="outlined"
@@ -513,295 +552,332 @@ const InvoiceViewer = ({ type, title, invoiceName }) => {
               </Button>
             </Stack>
           </Box>
+        </Box>
 
-          {loading && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-              <CircularProgress size={60} thickness={4} />
-            </Box>
-          )}
+        {loading && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
+            <CircularProgress size={60} thickness={4} />
+          </Box>
+        )}
 
-          {error && (
-            <Alert severity="error" sx={{ mb: 3 }}>
-              {error}
-            </Alert>
-          )}
+        {error && (
+          <Alert severity="error" sx={{ mb: 3 }}>
+            {error}
+          </Alert>
+        )}
 
-          {(stockData.length > 0 || invoiceData.length > 0 || showHistory) && (
-            <>
-              <Tabs
-                value={showHistory ? 'history' : currentView}
-                onChange={(e, newValue) => {
-                  if (newValue === 'history') {
-                    setShowHistory(true);
-                  } else {
-                    setShowHistory(false);
-                    setCurrentView(newValue);
-                  }
-                }}
-                sx={{ mb: 3 }}
-              >
+        {(stockData.length > 0 || invoiceData.length > 0 || showHistory) && (
+          <>
+            <Tabs
+              value={showHistory ? 'history' : currentView}
+              onChange={(e, newValue) => {
+                if (newValue === 'history') {
+                  setShowHistory(true);
+                } else {
+                  setShowHistory(false);
+                  setCurrentView(newValue);
+                }
+              }}
+              sx={{ mb: 3 }}
+            >
+              <Tab 
+                value="stock" 
+                label={translate('Current Stock')} 
+                icon={<InventoryIcon />} 
+                iconPosition="start"
+              />
+              {invoiceData.length > 0 && (
                 <Tab 
-                  value="stock" 
-                  label={translate('Current Stock')} 
-                  icon={<InventoryIcon />} 
+                  value="import" 
+                  label={translate('New Import')} 
+                  icon={<CloudUploadIcon />} 
                   iconPosition="start"
                 />
-                {invoiceData.length > 0 && (
-                  <Tab 
-                    value="import" 
-                    label={translate('New Import')} 
-                    icon={<CloudUploadIcon />} 
-                    iconPosition="start"
-                  />
-                )}
-                <Tab 
-                  value="history" 
-                  label={translate('History')} 
-                  icon={<HistoryIcon />} 
-                  iconPosition="start"
-                />
-              </Tabs>
+              )}
+              <Tab 
+                value="history" 
+                label={translate('History')} 
+                icon={<HistoryIcon />} 
+                iconPosition="start"
+              />
+            </Tabs>
 
-              {showHistory ? (
-                <HistoryView type={type} />
-              ) : (
-                <>
-                  <Grid container spacing={3} sx={{ mb: 4 }}>
-                    <Grid item xs={12} md={6}>
-                      <Card elevation={0} sx={{ bgcolor: 'background.paper' }}>
-                        <CardContent>
-                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                            <DescriptionIcon color="primary" sx={{ mr: 1 }} />
-                            <Typography variant="subtitle1" color="text.secondary">
-                              {translate('Total Items')}
-                            </Typography>
-                          </Box>
-                          <Typography variant="h4" color="primary">
-                            {currentView === 'stock' ? stockData.length : invoiceData.length}
+            {showHistory ? (
+              <HistoryView type={type} />
+            ) : (
+              <>
+                <Grid container spacing={3} sx={{ mb: 4 }}>
+                  <Grid item xs={12} md={6}>
+                    <Card elevation={0} sx={{ bgcolor: 'background.paper' }}>
+                      <CardContent>
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                          <DescriptionIcon color="primary" sx={{ mr: 1 }} />
+                          <Typography variant="subtitle1" color="text.secondary">
+                            {translate('Total Items')}
                           </Typography>
-                        </CardContent>
-                      </Card>
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                      <Card elevation={0} sx={{ bgcolor: 'background.paper' }}>
-                        <CardContent>
-                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                            <NumbersIcon color="primary" sx={{ mr: 1 }} />
-                            <Typography variant="subtitle1" color="text.secondary">
-                              {translate('Total Quantity')}
-                            </Typography>
-                          </Box>
-                          <Typography variant="h4" color="primary">
-                            {currentView === 'stock' 
-                              ? stockData.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0)
-                              : invoiceData.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0)
-                            }
-                          </Typography>
-                        </CardContent>
-                      </Card>
-                    </Grid>
+                        </Box>
+                        <Typography variant="h4" color="primary">
+                          {currentView === 'stock' ? stockData.length : invoiceData.length}
+                        </Typography>
+                      </CardContent>
+                    </Card>
                   </Grid>
+                  <Grid item xs={12} md={6}>
+                    <Card elevation={0} sx={{ bgcolor: 'background.paper' }}>
+                      <CardContent>
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                          <NumbersIcon color="primary" sx={{ mr: 1 }} />
+                          <Typography variant="subtitle1" color="text.secondary">
+                            {translate('Total Quantity')}
+                          </Typography>
+                        </Box>
+                        <Typography variant="h4" color="primary">
+                          {currentView === 'stock' 
+                            ? stockData.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0)
+                            : invoiceData.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0)
+                          }
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                </Grid>
 
-                  <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 3 }}>
-                    <FormControl size="small" sx={{ minWidth: 150 }}>
-                      <InputLabel>{translate('Search in')}</InputLabel>
-                      <Select
-                        value={searchField}
-                        onChange={handleSearchFieldChange}
-                        label={translate('Search in')}
-                      >
-                        <MenuItem value="all">{translate('All Fields')}</MenuItem>
-                        <MenuItem value="color">{translate('Color')}</MenuItem>
-                        <MenuItem value="itemCode">{translate('Item Code')}</MenuItem>
-                        <MenuItem value="size">{translate('Size')}</MenuItem>
-                      </Select>
-                    </FormControl>
-                    <TextField
-                      size="small"
-                      placeholder={`Search ${searchField === 'all' ? translate('all fields') : searchField}...`}
-                      value={searchTerm}
-                      onChange={handleSearchChange}
-                      InputProps={{
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <SearchIcon />
-                          </InputAdornment>
-                        ),
-                        endAdornment: searchTerm && (
-                          <InputAdornment position="end">
-                            <IconButton size="small" onClick={clearSearch}>
-                              <ClearIcon />
-                            </IconButton>
-                          </InputAdornment>
-                        ),
-                      }}
-                      sx={{ width: 300 }}
-                    />
-                    {currentView === 'import' && (
-                      <Button
-                        variant="contained"
-                        color="success"
-                        onClick={handleConfirmImport}
-                      >
-                        {translate('Confirm Import')}
-                      </Button>
-                    )}
-                  </Box>
-
-                  <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-                    <Table>
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>{translate('Item Code')}</TableCell>
-                          <TableCell>{translate('Color')}</TableCell>
-                          <TableCell align="right">{translate('Quantity')}</TableCell>
-                          <TableCell>{translate('Size')}</TableCell>
-                          <TableCell align="center">{translate('Actions')}</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {filteredData
-                          .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                          .map((item, index) => (
-                            <TableRow key={index} hover>
-                              <TableCell>{item.itemCode}</TableCell>
-                              <TableCell>{item.color}</TableCell>
-                              <TableCell align="right">{item.quantity}</TableCell>
-                              <TableCell>{item.size}</TableCell>
-                              <TableCell align="center">
-                                <Stack direction="row" spacing={1} justifyContent="center">
-                                  <IconButton
-                                    size="small"
-                                    onClick={() => handleEditClick(item)}
-                                    color="primary"
-                                    aria-label={translate('Edit item')}
-                                  >
-                                    <EditIcon />
-                                  </IconButton>
-                                  <IconButton
-                                    size="small"
-                                    onClick={() => handleDeleteClick(item)}
-                                    color="error"
-                                    aria-label={translate('Delete item')}
-                                  >
-                                    <DeleteIcon />
-                                  </IconButton>
-                                </Stack>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-
-                  <TablePagination
-                    rowsPerPageOptions={[10, 25, 50, 100]}
-                    component="div"
-                    count={filteredData.length}
-                    rowsPerPage={rowsPerPage}
-                    page={page}
-                    onPageChange={handleChangePage}
-                    onRowsPerPageChange={handleChangeRowsPerPage}
-                    sx={{ mt: 2 }}
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 3 }}>
+                  <FormControl size="small" sx={{ minWidth: 150 }}>
+                    <InputLabel>{translate('Search in')}</InputLabel>
+                    <Select
+                      value={searchField}
+                      onChange={handleSearchFieldChange}
+                      label={translate('Search in')}
+                    >
+                      <MenuItem value="all">{translate('All Fields')}</MenuItem>
+                      <MenuItem value="color">{translate('Color')}</MenuItem>
+                      <MenuItem value="itemCode">{translate('Item Code')}</MenuItem>
+                      <MenuItem value="size">{translate('Size')}</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <TextField
+                    size="small"
+                    placeholder={`Search ${searchField === 'all' ? translate('all fields') : searchField}...`}
+                    value={searchTerm}
+                    onChange={handleSearchChange}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon />
+                        </InputAdornment>
+                      ),
+                      endAdornment: searchTerm && (
+                        <InputAdornment position="end">
+                          <IconButton size="small" onClick={clearSearch}>
+                            <ClearIcon />
+                          </IconButton>
+                        </InputAdornment>
+                      ),
+                    }}
+                    sx={{ width: 300 }}
                   />
-                </>
-              )}
-            </>
-          )}
-
-          <Dialog
-            open={clearConfirmOpen}
-            onClose={() => setClearConfirmOpen(false)}
-            aria-labelledby="clear-confirm-title"
-            aria-describedby="clear-confirm-description"
-          >
-            <DialogTitle id="clear-confirm-title">{translate('Clear Stock Confirmation')}</DialogTitle>
-            <DialogContent id="clear-confirm-description">
-              <Typography>
-                {translate('Are you sure you want to clear all')} {type === 'worldFamous' ? 'World Famous' : type === 'eternal' ? 'Eternal' : 'Solid Ink'} {translate('stock data? This action cannot be undone.')}
-              </Typography>
-            </DialogContent>
-            <DialogActions>
-              <Button 
-                onClick={() => setClearConfirmOpen(false)}
-                aria-label="Cancel Clear"
-              >
-                {translate('Cancel')}
-              </Button>
-              <Button 
-                onClick={handleClearStock} 
-                color="error" 
-                variant="contained"
-                aria-label="Confirm Clear Stock"
-              >
-                {translate('Clear Stock')}
-              </Button>
-            </DialogActions>
-          </Dialog>
-
-          <EditItemDialog
-            open={editDialogOpen}
-            onClose={() => {
-              setEditDialogOpen(false);
-              setSelectedItem(null);
-            }}
-            item={selectedItem}
-            onSave={handleEditSave}
-          />
-
-          <AddItemDialog
-            open={addDialogOpen}
-            onClose={() => setAddDialogOpen(false)}
-            onSave={handleAddItem}
-          />
-
-          <Dialog
-            open={deleteConfirmOpen}
-            onClose={() => {
-              setDeleteConfirmOpen(false);
-              setItemToDelete(null);
-            }}
-            aria-labelledby="delete-confirm-title"
-            aria-describedby="delete-confirm-description"
-          >
-            <DialogTitle id="delete-confirm-title">{translate('Delete Item')}</DialogTitle>
-            <DialogContent id="delete-confirm-description">
-              <Typography>
-                {translate('Are you sure you want to delete this item?')}
-              </Typography>
-              {itemToDelete && (
-                <Box sx={{ mt: 2 }}>
-                  <Typography variant="subtitle2">{translate('Item Details:')}</Typography>
-                  <Typography>{translate('Code:')} {itemToDelete.itemCode}</Typography>
-                  <Typography>{translate('Color:')} {itemToDelete.color}</Typography>
-                  <Typography>{translate('Size:')} {itemToDelete.size}</Typography>
-                  <Typography>{translate('Quantity:')} {itemToDelete.quantity}</Typography>
+                  {currentView === 'import' && (
+                    <Button
+                      variant="contained"
+                      color="success"
+                      onClick={handleConfirmImport}
+                    >
+                      {translate('Confirm Import')}
+                    </Button>
+                  )}
                 </Box>
-              )}
-            </DialogContent>
-            <DialogActions>
-              <Button 
-                onClick={() => {
-                  setDeleteConfirmOpen(false);
-                  setItemToDelete(null);
-                }}
-                aria-label={translate('Cancel Delete')}
-              >
-                {translate('Cancel')}
-              </Button>
-              <Button 
-                onClick={handleConfirmDelete} 
-                color="error" 
-                variant="contained"
-                aria-label={translate('Confirm Delete')}
-              >
-                {translate('Delete')}
-              </Button>
-            </DialogActions>
-          </Dialog>
-        </Paper>
-      </Fade>
-    </Container>
+
+                <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>{translate('Item Code')}</TableCell>
+                        <TableCell>{translate('Color')}</TableCell>
+                        <TableCell align="right">{translate('Quantity')}</TableCell>
+                        <TableCell>{translate('Size')}</TableCell>
+                        <TableCell align="center">{translate('Actions')}</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {filteredData
+                        .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                        .map((item, index) => (
+                          <TableRow key={index} hover>
+                            <TableCell>{item.itemCode}</TableCell>
+                            <TableCell>{item.color}</TableCell>
+                            <TableCell align="right">{item.quantity}</TableCell>
+                            <TableCell>{item.size}</TableCell>
+                            <TableCell align="center">
+                              <Stack direction="row" spacing={1} justifyContent="center">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleEditClick(item)}
+                                  color="primary"
+                                  aria-label={translate('Edit item')}
+                                >
+                                  <EditIcon />
+                                </IconButton>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleDeleteClick(item)}
+                                  color="error"
+                                  aria-label={translate('Delete item')}
+                                >
+                                  <DeleteIcon />
+                                </IconButton>
+                              </Stack>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+
+                <TablePagination
+                  rowsPerPageOptions={[10, 25, 50, 100]}
+                  component="div"
+                  count={filteredData.length}
+                  rowsPerPage={rowsPerPage}
+                  page={page}
+                  onPageChange={handleChangePage}
+                  onRowsPerPageChange={handleChangeRowsPerPage}
+                  sx={{ mt: 2 }}
+                />
+              </>
+            )}
+          </>
+        )}
+
+        <Dialog
+          open={clearConfirmOpen}
+          onClose={() => setClearConfirmOpen(false)}
+          aria-labelledby="clear-confirm-title"
+          aria-describedby="clear-confirm-description"
+        >
+          <DialogTitle id="clear-confirm-title">{translate('Clear Stock Confirmation')}</DialogTitle>
+          <DialogContent id="clear-confirm-description">
+            <Typography>
+              {translate('Are you sure you want to clear all')} {type === 'worldFamous' ? 'World Famous' : type === 'eternal' ? 'Eternal' : 'Solid Ink'} {translate('stock data? This action cannot be undone.')}
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button 
+              onClick={() => setClearConfirmOpen(false)}
+              aria-label="Cancel Clear"
+            >
+              {translate('Cancel')}
+            </Button>
+            <Button 
+              onClick={handleClearStock} 
+              color="error" 
+              variant="contained"
+              aria-label="Confirm Clear Stock"
+            >
+              {translate('Clear Stock')}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <EditItemDialog
+          open={editDialogOpen}
+          onClose={() => {
+            setEditDialogOpen(false);
+            setSelectedItem(null);
+          }}
+          item={selectedItem}
+          onSave={handleEditSave}
+        />
+
+        <AddItemDialog
+          open={addDialogOpen}
+          onClose={() => setAddDialogOpen(false)}
+          onSave={handleAddItem}
+        />
+
+        <Dialog
+          open={deleteConfirmOpen}
+          onClose={() => {
+            setDeleteConfirmOpen(false);
+            setItemToDelete(null);
+          }}
+          aria-labelledby="delete-confirm-title"
+          aria-describedby="delete-confirm-description"
+        >
+          <DialogTitle id="delete-confirm-title">{translate('Delete Item')}</DialogTitle>
+          <DialogContent id="delete-confirm-description">
+            <Typography>
+              {translate('Are you sure you want to delete this item?')}
+            </Typography>
+            {itemToDelete && (
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="subtitle2">{translate('Item Details:')}</Typography>
+                <Typography>{translate('Code:')} {itemToDelete.itemCode}</Typography>
+                <Typography>{translate('Color:')} {itemToDelete.color}</Typography>
+                <Typography>{translate('Size:')} {itemToDelete.size}</Typography>
+                <Typography>{translate('Quantity:')} {itemToDelete.quantity}</Typography>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button 
+              onClick={() => {
+                setDeleteConfirmOpen(false);
+                setItemToDelete(null);
+              }}
+              aria-label={translate('Cancel Delete')}
+            >
+              {translate('Cancel')}
+            </Button>
+            <Button 
+              onClick={handleConfirmDelete} 
+              color="error" 
+              variant="contained"
+              aria-label={translate('Confirm Delete')}
+            >
+              {translate('Delete')}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog open={versionModalOpen} onClose={() => setVersionModalOpen(false)} maxWidth="md" fullWidth>
+          <DialogTitle>Version History</DialogTitle>
+          <DialogContent>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Timestamp</TableCell>
+                  <TableCell>Action</TableCell>
+                  <TableCell>Restore</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {versions.map((v) => (
+                  <TableRow key={v.id}>
+                    <TableCell>{new Date(v.timestamp).toLocaleString()}</TableCell>
+                    <TableCell>{v.action}</TableCell>
+                    <TableCell>
+                      <Button
+                        variant="outlined"
+                        color="primary"
+                        size="small"
+                        disabled={restoring}
+                        onClick={() => handleRestoreVersion(v.id)}
+                      >
+                        Restore
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setVersionModalOpen(false)}>Close</Button>
+          </DialogActions>
+        </Dialog>
+      </Paper>
+    </Box>
   );
 };
 

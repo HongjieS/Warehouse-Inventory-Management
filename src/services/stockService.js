@@ -125,4 +125,60 @@ export const importStock = (jsonData) => {
   } catch (error) {
     throw new Error(`Failed to parse stock data: ${error.message}`);
   }
-}; 
+};
+
+export const setStock = (type, items) => {
+  let key;
+  if (type === 'worldFamous') {
+    key = WORLD_FAMOUS_KEY;
+  } else if (type === 'eternal') {
+    key = ETERNAL_KEY;
+  } else if (type === 'solidInk') {
+    key = SOLID_INK_KEY;
+  } else {
+    throw new Error('Invalid stock type');
+  }
+  localStorage.setItem(key, JSON.stringify(items));
+};
+
+// Versioning system for stock
+const getVersionKey = (type) => {
+  if (type === 'worldFamous') return 'worldFamousStockVersions';
+  if (type === 'eternal') return 'eternalStockVersions';
+  if (type === 'solidInk') return 'solidInkStockVersions';
+  throw new Error('Invalid stock type');
+};
+
+export function saveStockVersion(type, action, items) {
+  const key = getVersionKey(type);
+  const versions = getStockVersions(type);
+  const version = {
+    id: Date.now().toString(),
+    timestamp: new Date().toISOString(),
+    action,
+    items: JSON.parse(JSON.stringify(items)), // deep copy
+  };
+  versions.unshift(version);
+  // Keep only the latest 20 versions
+  if (versions.length > 20) versions.length = 20;
+  localStorage.setItem(key, JSON.stringify(versions));
+  return version.id;
+}
+
+export function getStockVersions(type) {
+  const key = getVersionKey(type);
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function restoreStockVersion(type, versionId) {
+  const versions = getStockVersions(type);
+  const version = versions.find(v => v.id === versionId);
+  if (!version) throw new Error('Version not found');
+  setStock(type, version.items);
+  return version.items;
+} 
